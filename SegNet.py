@@ -1,18 +1,20 @@
-import numpy as np
-import pandas as pd
-
 import json
 import sys
-
+import os
+import numpy as np
+import pandas as pd
 from skimage.io import imread
 from matplotlib import pyplot as plt
 
-import os
-os.environ['KERAS_BACKEND'] = 'theano'
-os.environ['THEANO_FLAGS'] = 'mode=FAST_RUN, device=gpu0, floatX=float32, optimizer=fast_compile'
-
+from keras import backend as K
 from keras import models
 from keras.optimizers import SGD
+from keras.utils import plot_model
+import theano
+#theano.config.device = 'gpu'
+#theano.config.floatX = 'float32'
+
+debug = True
 
 
 path = 'Data/'
@@ -25,7 +27,7 @@ n_test = 3
 
 
 def label_map(labels):
-    label_map = np.zeros([img_h, img_w, n_labels])    
+    label_map = np.zeros([img_h, img_w, n_labels])
     for r in range(img_h):
         for c in range(img_w):
             label_map[r, c, labels[r][c]] = 1
@@ -37,12 +39,17 @@ def prep_data(mode):
         'mode should be either \'test\' or \'train\''
     data = []
     label = []
+    print("It is mode: ",mode)
     df = pd.read_csv(path + mode + '.csv')
     n = n_train if mode == 'train' else n_test
     for i, item in df.iterrows():
         if i >= n:
             break
-        img, gt = [imread(path + item[0])], np.clip(imread(path + item[1]), 0, 1)
+        img = imread(path + item[0])
+        gt = np.clip(imread(path + item[1]), 0, 1)
+        if debug==True:
+            print("shape of img: ", np.array(img).shape)
+            img = np.reshape(img, (img_w, img_h,1))
         data.append(img)
         label.append(label_map(gt))
         sys.stdout.write('\r')
@@ -53,10 +60,10 @@ def prep_data(mode):
     sys.stdout.flush()
     data, label = np.array(data), np.array(label).reshape((n, img_h * img_w, n_labels))
 
-    print mode + ': OK'
-    print '\tshapes: {}, {}'.format(data.shape, label.shape)
-    print '\ttypes:  {}, {}'.format(data.dtype, label.dtype)
-    print '\tmemory: {}, {} MB'.format(data.nbytes / 1048576, label.nbytes / 1048576)
+    print (mode + ': OK')
+    print ('\tshapes: {}, {}'.format(data.shape, label.shape))
+    print ('\ttypes:  {}, {}'.format(data.dtype, label.dtype))
+    print ('\tmemory: {}, {} MB'.format(data.nbytes / 1048576, label.nbytes / 1048576))
 
     return data, label
 
@@ -106,25 +113,35 @@ with open('model_5l.json') as model_file:
 
 optimizer = SGD(lr=0.001, momentum=0.9, decay=0.0005, nesterov=False)
 autoencoder.compile(loss="categorical_crossentropy", optimizer=optimizer, metrics=['accuracy'])
-print 'Compiled: OK'
+print ('Compiled: OK')
 
 # Train model or load weights
 # train_data, train_label = prep_data('train')
 # nb_epoch = 50
 # batch_size = 18
+#
+# print("Print training data statistics")
+# print("Shape of training data: ",np.array(train_data).shape)
+# print("Shape of  train_label: ",np.array(train_label).shape)
+#
+#
+#
 # history = autoencoder.fit(train_data, train_label, batch_size=batch_size, nb_epoch=nb_epoch, verbose=1)
 # autoencoder.save_weights('model_5l_weight_ep50.hdf5')
+# print("saved weights")
 
 autoencoder.load_weights('model_5l_weight_ep50.hdf5')
 
+
+
 # Model visualization
-from keras.utils.visualize_util import plot
-plot(autoencoder, to_file='model.png', show_shapes=True)
+
+plot_model(autoencoder, to_file='model.png', show_shapes=True)
 
 test_data, test_label = prep_data('test')
 score = autoencoder.evaluate(test_data, test_label, verbose=0)
-print 'Test score:', score[0]
-print 'Test accuracy:', score[1]
+print ('Test score:', score[0])
+print ('Test accuracy:', score[1])
 
 output = autoencoder.predict_proba(test_data, verbose=0)
 output = output.reshape((output.shape[0], img_h, img_w, n_labels))
